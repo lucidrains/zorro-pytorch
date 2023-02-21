@@ -4,6 +4,10 @@
 
 Implementation of <a href="https://arxiv.org/abs/2301.09595">Zorro</a>, Masked Multimodal Transformer, in Pytorch. This is a Deepmind work that claims a special masking strategy within a transformer help them achieve SOTA on a few multimodal benchmarks.
 
+## Appreciation
+
+- <a href="https://stability.ai/">Stability.ai</a> for the generous sponsorship to work and open source cutting edge artificial intelligence research
+
 ## Citations
 
 ```bibtex
