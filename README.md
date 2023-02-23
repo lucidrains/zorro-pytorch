@@ -8,6 +8,29 @@ Implementation of <a href="https://arxiv.org/abs/2301.09595">Zorro</a>, Masked M
 
 - <a href="https://stability.ai/">Stability.ai</a> for the generous sponsorship to work and open source cutting edge artificial intelligence research
 
+## Install
+
+```bash
+$ pip install zorro-pytorch
+```
+
+## Usage
+
+```python
+import torch
+from zorro_pytorch import Zorro
+
+model = Zorro(
+    dim = 512,
+    depth = 6
+)
+
+video = torch.randn(2, 3, 8, 32, 32)
+audio = torch.randn(2, 1024 * 10)
+
+return_tokens = model(audio = audio, video = video) # (2, 3, 512) - 1 audio, 1 video, 1 fusion - but customizable
+```
+
 ## Citations
 
 ```bibtex

@@ -21,6 +21,7 @@ setup(
     'beartype',
     'einops>=0.4',
     'torch>=1.6',
+    'torchaudio'
   ],
   classifiers=[
     'Development Status :: 4 - Beta',
