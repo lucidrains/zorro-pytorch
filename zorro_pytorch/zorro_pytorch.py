@@ -1,5 +1,6 @@
 from enum import Enum
 import functools
+from functools import wraps
 
 import torch
 import torch.nn.functional as F
@@ -9,7 +10,7 @@ from einops import rearrange, repeat, pack, unpack
 from einops.layers.torch import Rearrange
 
 from beartype import beartype
-from beartype.typing import Tuple, Optional
+from beartype.typing import Tuple, Optional, Union
 
 from torchaudio.transforms import Spectrogram
 
@@ -42,6 +43,21 @@ def cum_mul(it):
 
 def divisible_by(numer, denom):
     return (numer % denom) == 0
+
+# decorators
+
+def once(fn):
+    called = False
+    @wraps(fn)
+    def inner(x):
+        nonlocal called
+        if called:
+            return
+        called = True
+        return fn(x)
+    return inner
+
+print_once = once(print)
 
 # bias-less layernorm
 
@@ -127,8 +143,8 @@ class Zorro(nn.Module):
         heads = 8,
         ff_mult = 4,
         num_fusion_tokens = 16,
-        audio_patch_size = 16,
-        video_patch_size = 16,
+        audio_patch_size: Union[int, Tuple[int, int]] = 16,
+        video_patch_size: Union[int, Tuple[int, int]] = 16,
         video_temporal_patch_size = 2,
         video_channels = 3,
         spec_n_fft = 128,
@@ -145,7 +161,10 @@ class Zorro(nn.Module):
     ):
         super().__init__()
         self.max_return_tokens = len(return_token_types)
+
         self.return_token_types = return_token_types
+        return_token_types_tensor = torch.tensor(list(map(lambda t: t.value, return_token_types)))
+        self.register_buffer('return_token_types_tensor', return_token_types_tensor, persistent = False)
 
         self.return_tokens = nn.Parameter(torch.randn(self.max_return_tokens, dim))
         self.attn_pool = Attention(dim = dim, dim_head = dim_head, heads = heads)
@@ -211,9 +230,9 @@ class Zorro(nn.Module):
     ):
         batch, device = audio.shape[0], audio.device
     
-        audio = self.spec(audio)
-
         # automatically crop if audio does not yield a 2d spectrogram that is divisible by patch sizes
+
+        audio = self.spec(audio)
 
         height, width = audio.shape[-2:]
         patch_height, patch_width = self.audio_patch_size
@@ -221,9 +240,11 @@ class Zorro(nn.Module):
         rounded_height, rounded_width = map(lambda args: round_down_nearest_multiple(*args), ((height, patch_height), (width, patch_width)))
 
         if (height, width) != (rounded_height, rounded_width): # just keep printing to be annoying until it is fixed
-            print(f'spectrogram yielded shape of {(height, width)}, but had to be cropped to {(rounded_height, rounded_width)} to be patchified for transformer')
+            print_once(f'spectrogram yielded shape of {(height, width)}, but had to be cropped to {(rounded_height, rounded_width)} to be patchified for transformer')
 
         audio = audio[..., :rounded_height, :rounded_width]
+
+        # to tokens
 
         audio_tokens = self.audio_to_tokens(audio)
 
@@ -231,19 +252,65 @@ class Zorro(nn.Module):
 
         fusion_tokens = repeat(self.fusion_tokens, 'n d -> b n d', b = batch)
 
+        # construct all tokens
+
+        audio_tokens, fusion_tokens, video_tokens = map(lambda t: rearrange(t, 'b ... d -> b (...) d'), (audio_tokens, fusion_tokens, video_tokens))
+
         tokens, ps = pack((
             audio_tokens,
             fusion_tokens,
             video_tokens
         ), 'b * d')
 
+        # construct mask (thus zorro)
+
+        token_types = torch.tensor(list((
+            *((TokenTypes.AUDIO.value,) * audio_tokens.shape[-2]),
+            *((TokenTypes.FUSION.value,) * fusion_tokens.shape[-2]),
+            *((TokenTypes.VIDEO.value,) * video_tokens.shape[-2]),
+        )), device = device, dtype = torch.long)
+
+        token_types_attend_from = rearrange(token_types, 'i -> i 1')
+        token_types_attend_to = rearrange(token_types, 'j -> 1 j')
+
+        # the logic goes
+        # every modality, including fusion can attend to self
+
+        zorro_mask = token_types_attend_from == token_types_attend_to
+
+        # fusion can attend to everything
+
+        zorro_mask = zorro_mask & token_types_attend_from == TokenTypes.FUSION.value
+
+        # and both specific modalities like audio and video can attend to fusion
+
+        zorro_mask = zorro_mask & token_types_attend_to == TokenTypes.FUSION.value
+
+        # attend and feedforward
+
         for attn, ff in self.layers:
-            tokens = attn(tokens) + tokens
+            tokens = attn(tokens, attn_mask = zorro_mask) + tokens
             tokens = ff(tokens) + tokens
 
         tokens = self.norm(tokens)
 
-        return_tokens = repeat(self.return_tokens, 'n d -> b n d', b = batch)
+        # final attention pooling - each modality pool token can only attend to its own tokens
 
-        pooled_tokens = self.attn_pool(return_tokens, context = tokens) + return_tokens
+        return_tokens = self.return_tokens
+        return_token_types_tensor = self.return_token_types_tensor
+
+        if exists(return_token_indices):
+            assert len(set(return_token_indices)) == len(return_token_indices), 'all indices must be unique'
+            assert all([indice < self.max_return_tokens for indice in return_token_indices]), 'indices must range from 0 to max_num_return_tokens - 1'
+
+            return_token_indices = torch.tensor(return_token_indices, dtype = torch.long, device = device)
+
+            return_token_types_tensor = return_token_types_tensor[return_token_indices]
+            return_tokens = return_tokens[return_token_indices]
+
+        return_tokens = repeat(return_tokens, 'n d -> b n d', b = batch)
+        pool_mask = rearrange(return_token_types_tensor, 'i -> i 1') == token_types_attend_to
+
+        pooled_tokens = self.attn_pool(return_tokens, context = tokens, attn_mask = pool_mask) + return_tokens
+
         return pooled_tokens
