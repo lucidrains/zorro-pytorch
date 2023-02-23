@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'zorro-pytorch',
   packages = find_packages(exclude=[]),
-  version = '0.0.1',
+  version = '0.0.2',
   license='MIT',
   description = 'Zorro - Pytorch',
   author = 'Phil Wang',
@@ -21,6 +21,7 @@ setup(
     'beartype',
     'einops>=0.4',
     'torch>=1.6',
+    'torchaudio'
   ],
   classifiers=[
     'Development Status :: 4 - Beta',
