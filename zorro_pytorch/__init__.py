@@ -1,1 +1,1 @@
-from zorro_pytorch.zorro_pytorch import Zorro
+from zorro_pytorch.zorro_pytorch import Zorro, TokenTypes
