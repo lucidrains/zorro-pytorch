@@ -35,6 +35,7 @@ model = Zorro(
         T.AUDIO,
         T.AUDIO,
         T.FUSION,
+        T.GLOBAL,
         T.VIDEO,
         T.VIDEO,
         T.VIDEO,
