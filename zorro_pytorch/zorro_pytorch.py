@@ -287,10 +287,6 @@ class Zorro(nn.Module):
 
         zorro_mask = zorro_mask | token_types_attend_from == TokenTypes.FUSION.value
 
-        # and both specific modalities like audio and video can attend to fusion
-
-        zorro_mask = zorro_mask | token_types_attend_to == TokenTypes.FUSION.value
-
         # attend and feedforward
 
         for attn, ff in self.layers:
