@@ -20,6 +20,7 @@ class TokenTypes(Enum):
     AUDIO = 0
     VIDEO = 1
     FUSION = 2
+    GLOBAL = 3
 
 # functions
 
@@ -314,6 +315,8 @@ class Zorro(nn.Module):
 
         return_tokens = repeat(return_tokens, 'n d -> b n d', b = batch)
         pool_mask = rearrange(return_token_types_tensor, 'i -> i 1') == token_types_attend_to
+        # global queries can attend to all tokens
+        pool_mask = pool_mask | rearrange(return_token_types_tensor, 'i -> i 1') == torch.ones_like(token_types_attend_to, dtype=torch.long) * TokenTypes.GLOBAL.value
 
         pooled_tokens = self.attn_pool(return_tokens, context = tokens, attn_mask = pool_mask) + return_tokens
 
