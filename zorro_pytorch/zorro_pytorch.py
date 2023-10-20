@@ -285,7 +285,7 @@ class Zorro(nn.Module):
 
         # fusion can attend to everything
 
-        zorro_mask = zorro_mask | token_types_attend_from == TokenTypes.FUSION.value
+        zorro_mask = zorro_mask | (token_types_attend_from == TokenTypes.FUSION.value)
 
         # attend and feedforward
 
